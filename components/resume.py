@@ -18,7 +18,6 @@ def resume_ui():
         st.error("Gemini API key missing")
         st.stop()
 
-    # ✅ Create Gemini client
     client = genai.Client(api_key=api_key)
 
     st.title("AI Resume Analyser")
@@ -46,7 +45,7 @@ def resume_ui():
         if st.button("Ask AI") and user_prompt:
             with st.spinner("Thinking..."):
 
-                # ✅ Gemini 3 Flash (NEW API STYLE)
+                # Gemini 3 Flash
                 response = client.models.generate_content(
                     model="gemini-3-flash-preview",
                     contents=[
