@@ -5,3 +5,4 @@ PyMuPDF
 fpdf
 dotenv
 google-generativeai>=0.7.2
+google-genai
