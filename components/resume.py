@@ -1,82 +1,98 @@
 import streamlit as st
-import fitz # This is PyMuPDF (import it like this)
-import re # regular expression (extract mail,date,pass, phone no.)
-from io import BytesIO #taking the values direclty from the memory with stroing in the disk 
-from openai import OpenAI # for conversation
-from fpdf import FPDF # to convert text to pdf
+import fitz
+from io import BytesIO
+from fpdf import FPDF
 from dotenv import load_dotenv
 import os
 
+from google import genai
+from google.genai import types
+
+
 def resume_ui():
     load_dotenv()
-    api_key = os.environ['API_KEY']
-    # api_key = os.getenv("API_KEY")
-    # try:
-    #     api_key = st.secrets["OPENAI_API_KEY"]
-    # except KeyError:
-    #     st.stop()
 
-    client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=api_key,
-    )
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        st.error("Gemini API key missing")
+        st.stop()
+
+    # ✅ Create Gemini client
+    client = genai.Client(api_key=api_key)
 
     st.title("AI Resume Analyser")
-    uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf") #uploading option
+
+    uploaded_file = st.file_uploader(
+        "Upload your resume (PDF)", type="pdf"
+    )
 
     if uploaded_file:
-        st.success(f"You uploaded: {uploaded_file.name}") # on success message 
+        st.success(f"You uploaded: {uploaded_file.name}")
 
-        doc = fitz.open(stream=uploaded_file.read(), filetype="pdf") #stream= its neccessary because file is not opened by the disk from local hence it reads directly from the stream byte
+        doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+
         full_text = ""
-
         for page in doc:
             full_text += page.get_text()
-
-        # emails = re.findall(r'\b[\w.-]+@[\w.-]+\.\w+\b',full_text)
-        # phone = re.findall(r'\d{10}', full_text)
-        # st.write(emails[0])
-        # st.write(phone[0])
 
         st.subheader("📑 Extracted Resume Text (Preview)")
         st.text_area("Contents", full_text, height=300)
 
-        user_prompt = st.text_input("Enter your question or instruction for the resume") #enter the prompt 
+        user_prompt = st.text_input(
+            "Enter your question or instruction for the resume"
+        )
 
         if st.button("Ask AI") and user_prompt:
-            with st.spinner("Thinking"):
-                response = client.chat.completions.create(
-                model="meta-llama/llama-3.3-70b-instruct:free",  # ai modal used 
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {
-                        "role": "user", 
-                        "content": f'''{user_prompt}\n\nHere is the resume:\n{full_text} 
-                                    also Rate my resume out of 10 and explain the rating briefly'''},
-                    
-                ]
-            )
+            with st.spinner("Thinking..."):
+
+                # ✅ Gemini 3 Flash (NEW API STYLE)
+                response = client.models.generate_content(
+                    model="gemini-3-flash-preview",
+                    contents=[
+                        f"""
+                        {user_prompt}
+
+                        Here is the resume:
+                        {full_text}
+
+                        Rate my resume out of 10 and explain briefly.
+                        """
+                    ],
+                    config=types.GenerateContentConfig(
+                        temperature=0.3,
+                        max_output_tokens=1200,
+                    ),
+                )
+
+                content = response.text
+
             st.success("Response received!")
-            content = response.choices[0].message.content
             st.write(content)
 
-            
+            # -------- PDF --------
             def create_pdf_from_text(content):
-                pdf = FPDF() #creating the instance of the fpdf
+                pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font("Arial", size=12)
-                content = content.replace('\u2013', '-') #pfdf does not support the unicode hence replace them with other symbol
-                content = content.encode('latin-1', 'replace').decode('latin-1')
 
-                lines = content.split('\n')
-                for line in lines:
+                content = content.replace("\u2013", "-")
+                content = content.encode(
+                    "latin-1", "replace"
+                ).decode("latin-1")
+
+                for line in content.split("\n"):
                     pdf.multi_cell(0, 10, txt=line)
 
-                # Save to a BytesIO buffer instead of a file
                 buffer = BytesIO()
-                buffer.write(pdf.output(dest='S').encode('latin1')) 
-                buffer.seek(0) # file pointer to the beginning 
+                buffer.write(pdf.output(dest="S").encode("latin1"))
+                buffer.seek(0)
                 return buffer
 
             pdf_file = create_pdf_from_text(content)
-            st.download_button("📄 Download Suggestions as PDF", pdf_file, file_name="ai_resume_feedback.pdf")
+
+            st.download_button(
+                "📄 Download Suggestions as PDF",
+                pdf_file,
+                file_name="ai_resume_feedback.pdf",
+            )
